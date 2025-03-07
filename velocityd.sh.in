@@ -10,10 +10,6 @@ declare -r GAME="@GAME@"
 
 # You may use this script for any game server of your choice, just alter the config file
 [[ -n "${SERVER_ROOT}" ]]  && declare -r SERVER_ROOT=${SERVER_ROOT}   || SERVER_ROOT="@SERVER_ROOT@"
-[[ -n "${BACKUP_DEST}" ]]  && declare -r BACKUP_DEST=${BACKUP_DEST}   || BACKUP_DEST="@BACKUP_DEST@"
-[[ -n "${BACKUP_PATHS}" ]] && declare -r BACKUP_PATHS=${BACKUP_PATHS} || BACKUP_PATHS="@BACKUP_PATHS@"
-[[ -n "${BACKUP_FLAGS}" ]] && declare -r BACKUP_FLAGS=${BACKUP_FLAGS} || BACKUP_FLAGS="@BACKUP_FLAGS@"
-[[ -n "${KEEP_BACKUPS}" ]] && declare -r KEEP_BACKUPS=${KEEP_BACKUPS} || KEEP_BACKUPS="@KEEP_BACKUPS@"
 [[ -n "${GAME_USER}" ]]    && declare -r GAME_USER=${GAME_USER}       || GAME_USER="@GAME_USER@"
 [[ -n "${MAIN_EXECUTABLE}" ]] && declare -r MAIN_EXECUTABLE=${MAIN_EXECUTABLE} || MAIN_EXECUTABLE="@MAIN_EXECUTABLE@"
 [[ -n "${SESSION_NAME}" ]] && declare -r SESSION_NAME=${SESSION_NAME} || SESSION_NAME="@SESSION_NAME@"
@@ -84,25 +80,32 @@ game_command() {
 	"${SUDO_CMD[@]}" tmux -L "${SESSION_NAME}" wait-for -U "command_lock"
 }
 
-# Check whether there are player on the server through list
+# Check whether there are players connected to the velocity proxy
+# This function analyzes the output of the 'glist' command to determine if players are connected
+# Returns:
+#   0 - Success: No players are online (0 players detected)
+#   1 - Failure: Players are online (either a specific count was detected or it couldn't be determined)
 is_player_online() {
-	response="$(sleep_time=0.6 return_stdout=true game_command list)"
-	# Delete leading line and fancy characters from free response string
-	response="$(echo "${response}" | sed -r -e 's/\x1B\[([0-9]{1,2}(;[0-9]{1,2})*)?[JKmsuG]//g')"
-	# The list command prints a line containing the usernames after the last occurrence of ": "
-	# and since playernames may not contain this string the clean player-list can easily be retrieved.
-	# Otherwise check the first digit after the last occurrence of "There are". If it is 0 then there
-	# are no players on the server. Should this test fail as well. Assume that a player is online.
-	if [[ $(echo "${response}" | sed -n -r -e 's/.*\: ?//p' | tr -d '\n' | wc -c) -le 1 ]]; then
-		# No player is online
-		return 0
-	elif [[ "x$(echo "${response}" | sed -n -r -e 's/.*there are[^0-9+]*([0-9]+).*$/\1/ip' | tr -d '\n')" == "x0" ]]; then
-		# No player is online
-		return 0
-	else
-		# A player is online (or it could not be determined)
-		return 1
-	fi
+    response="$(sleep_time=0.6 return_stdout=true game_command glist)"
+    # Clean ANSI escape sequences and color codes from the response
+    response="$(echo "${response}" | sed -r -e 's/\x1B\[([0-9]{1,2}(;[0-9]{1,2})*)?[JKmsuG]//g')"
+
+    # Extract the first line that contains "player" or "players"
+    player_line="$(echo "${response}" | grep -m 1 "players\?\( is\| are\)")"
+
+    # Extract the number before "player is" or "players are" from the relevant line
+    player_count="$(echo "${player_line}" | sed -n -r -e 's/.*[^0-9]([0-9]+) players? (is|are).*$/\1/p')"
+
+    if [[ "x${player_count}" == "x0" ]]; then
+        # No player is online (found exactly 0 players)
+        return 0
+    elif [[ "x${player_count}" == "x" ]]; then
+        # Could not determine player count from output, assume players are online
+        return 1
+    else
+        # At least one player is online (player_count is a positive number)
+        return 1
+    fi
 }
 
 # Check whether the server is visited by a player otherwise shut it down
@@ -262,12 +265,8 @@ server_stop() {
 			game_command stop
 		else
 			# Player(s) were seen on the server through list (or an error occurred)
-			# Warning the users through the server console
-			game_command say "Server is going down in 10 seconds! HURRY UP WITH WHATEVER YOU ARE DOING!"
-			game_command save-all
 			echo -en "Server is going down in..."
 			for i in {1..10}; do
-				game_command say "down in... $(( 10 - i ))"
 				echo -n " $(( 10 - i ))"
 				sleep 1
 			done
@@ -329,109 +328,6 @@ server_restart() {
 	fi
 }
 
-# Backup the directories specified in BACKUP_PATHS
-backup_files() {
-	# Check for the availability of the tar binaries
-	if ! command -v tar &> /dev/null; then
-		>&2 echo "The tar binaries are needed for a backup."
-		exit 11
-	fi
-
-	echo "Starting backup..."
-	fname="$(date +%Y_%m_%d_%H.%M.%S).tar.gz"
-	"${SUDO_CMD[@]}" mkdir -p "${BACKUP_DEST}"
-	if socket_has_session "${SESSION_NAME}"; then
-		game_command save-off
-		game_command save-all
-		sleep "${sleep_time:-0.3}"
-		sync && wait
-		"${SUDO_CMD[@]}" tar -C "${SERVER_ROOT}" -cf "${BACKUP_DEST}/${fname}" ${BACKUP_PATHS} --totals ${BACKUP_FLAGS} 2>&1 | grep -v "tar: Removing leading "
-		game_command save-on
-	else
-		"${SUDO_CMD[@]}" tar -C "${SERVER_ROOT}" -cf "${BACKUP_DEST}/${fname}" ${BACKUP_PATHS} --totals ${BACKUP_FLAGS} 2>&1 | grep -v "tar: Removing leading "
-	fi
-	echo -e "\e[39;1mbackup completed\e[0m\n"
-
-	echo -n "Only keeping the last ${KEEP_BACKUPS} backups and removing the other ones..."
-	backup_count=$(for f in "${BACKUP_DEST}"/[0-9_.]*; do echo "${f}"; done | wc -l)
-	if [[ $(( backup_count - KEEP_BACKUPS )) -gt 0 ]]; then
-		for old_backup in $(for f in "${BACKUP_DEST}"/[0-9_.]*; do echo "${f}"; done | head -n"$(( backup_count - KEEP_BACKUPS ))"); do
-			"${SUDO_CMD[@]}" rm "${old_backup}";
-		done
-		echo -e "\e[39;1m done\e[0m ($(( backup_count - KEEP_BACKUPS)) backup(s) pruned)"
-	else
-		echo -e "\e[39;1m done\e[0m (no backups pruned)"
-	fi
-}
-
-# Restore backup
-backup_restore() {
-	# Check for the availability of the tar binaries
-	if ! command -v tar &> /dev/null; then
-		>&2 echo "The tar binaries are needed for a backup."
-		exit 11
-	fi
-
-	# Only allow the user to restore a backup if the server is down
-	if socket_has_session "${SESSION_NAME}"; then
-		>&2 echo -e "The \e[39;1mserver should be down\e[0m in order to restore the world data."
-		exit 3
-	fi
-
-	# Either let the user choose a backup or expect one as an argument
-	if [[ $# -lt 1 ]]; then
-		echo "Please enter the corresponding number for the backup to be restored: "
-		i=1
-		for f in "${BACKUP_DEST}"/[0-9_.]*; do
-			echo -e "    \e[39;1m$i)\e[0m\t$f"
-			i=$(( i + 1 ))
-		done
-		echo -en "Restore backup number: "
-
-		# Read in user input
-		read -r user_choice
-
-		# Interpeting the input
-		if [[ $user_choice =~ ^-?[0-9]+$ ]]; then
-			n=1
-			for f in "${BACKUP_DEST}"/[0-9_.]*; do
-				[[ ${n} -eq $user_choice ]] && fname="$f"
-				n=$(( n + 1 ))
-			done
-			if [[ -z $fname ]]; then
-				>&2 echo -e "\e[39;1mFailed\e[0m to interpret your input. Please enter the digit of the presented options."
-				exit 5
-			fi
-		else
-			>&2 echo -e "\e[39;1mFailed\e[0m to interpret your input. Please enter a valid digit for one of the presented options."
-			exit 6
-		fi
-	elif [[ $# -eq 1 ]]; then
-		# Check for the existance of the specified file
-		if [[ -f "$1" ]]; then
-			fname="$1"
-		else
-			if [[ -f "${BACKUP_DEST}"/"$1" ]]; then
-				fname="${BACKUP_DEST}"/"$1"
-			else
-				>&2 echo -e "Sorry, but '$1', is \e[39;1mnot a valid file\e[0m, neither in your current directory nor in the backup folder."
-				exit 4
-			fi
-		fi
-	elif [[ $# -gt 1 ]]; then
-		>&2 echo -e "\e[39;1mToo many arguments.\e[0m Please pass only the filename for the world data as an argument."
-		>&2 echo "Or alternatively, no arguments at all to choose from a list of available backups."
-		exit 7
-	fi
-
-	echo "Restoring backup..."
-	if "${SUDO_CMD[@]}" tar -xf "${fname}" -C "${SERVER_ROOT}" 2>&1; then
-		echo -e "\e[39;1mRestoration completed\e[0m"
-	else
-		echo -e "\e[39;1mFailed to restore backup.\e[0m"
-	fi
-}
-
 # Run the given command at the game server console
 server_command() {
 	if [[ $# -lt 1 ]]; then
@@ -482,17 +378,19 @@ help() {
 	This script was designed to easily control any ${GAME} server. Almost any parameter for a given
 	${GAME} server derivative can be changed by editing the variables in the configuration file.
 
-	Usage: ${INAME} {start|stop|restart|status|backup|restore|command <command>|console}
+	Usage: ${INAME} {start|stop|restart|status|command <command>|console}
 	    start                Start the ${GAME} server
 	    stop                 Stop the ${GAME} server
 	    restart              Restart the ${GAME} server
 	    status               Print some status information
-	    backup               Backup the world data
-	    restore [filename]   Restore the world data from a backup
 	    command <command>    Run the given command at the ${GAME} server console
 	    console              Enter the server console through a tmux session
 
 	Copyright (c) Gordian Edenhofer <gordian.edenhofer@gmail.com>
+	Copyright (c) yuna0x0 <yuna@yuna0x0.com>
+
+	GitHub Repository: https://github.com/yuna0x0/velocity-proxy-mgmt
+	Forked from: https://github.com/Edenhofer/minecraft-server
 	EOF
 }
 
@@ -519,14 +417,6 @@ case "${1:-}" in
 
 	command)
 	server_command "${@:2}"
-	;;
-
-	backup)
-	backup_files
-	;;
-
-	restore)
-	backup_restore "${@:2}"
 	;;
 
 	idle_server_daemon)

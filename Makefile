@@ -10,20 +10,16 @@ datarootdir = $(prefix)/share
 mandir = $(prefix)/share/man
 man1dir = $(mandir)/man1
 
-SOURCES = minecraftd.sh.in minecraftd.conf.in minecraftd.service.in minecraftd.sysusers.in minecraftd.tmpfiles.in minecraftd-backup.service.in minecraftd-backup.timer.in
+SOURCES = velocityd.sh.in velocityd.conf.in velocityd.service.in velocityd.sysusers.in velocityd.tmpfiles.in
 OBJECTS = $(SOURCES:.in=)
 
-GAME = minecraft
-INAME = minecraftd
+GAME = velocity
+INAME = velocityd
 SERVER_ROOT = /srv/$(GAME)
-BACKUP_DEST = $(SERVER_ROOT)/backup
-BACKUP_PATHS = world
-BACKUP_FLAGS = -z
-KEEP_BACKUPS = 10
 GAME_USER = $(GAME)
-MAIN_EXECUTABLE = minecraft_server.jar
+MAIN_EXECUTABLE = velocity.jar
 SESSION_NAME = $(GAME)
-SERVER_START_CMD = java -Xms512M -Xmx1024M -jar ./$${MAIN_EXECUTABLE} nogui
+SERVER_START_CMD = java -Xms1G -Xmx1G -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:MaxInlineLevel=15 -jar ./$${MAIN_EXECUTABLE}
 SERVER_START_SUCCESS = done
 IDLE_SERVER = false
 IDLE_SESSION_NAME = idle_server_$${SESSION_NAME}
@@ -42,10 +38,6 @@ define replace_all
 		-e 's#@INAME@#$(INAME)#g' \
 		-e 's#@GAME@#$(GAME)#g' \
 		-e 's#@SERVER_ROOT@#$(SERVER_ROOT)#g' \
-		-e 's#@BACKUP_DEST@#$(BACKUP_DEST)#g' \
-		-e 's#@BACKUP_PATHS@#$(BACKUP_PATHS)#g' \
-		-e 's#@BACKUP_FLAGS@#$(BACKUP_FLAGS)#g' \
-		-e 's#@KEEP_BACKUPS@#$(KEEP_BACKUPS)#g' \
 		-e 's#@GAME_USER@#$(GAME_USER)#g' \
 		-e 's#@MAIN_EXECUTABLE@#$(MAIN_EXECUTABLE)#g' \
 		-e 's#@SESSION_NAME@#$(SESSION_NAME)#g' \
@@ -91,19 +83,15 @@ distclean: clean
 maintainer-clean: clean
 
 install:
-	$(INSTALL_PROGRAM) -D minecraftd.sh "$(DESTDIR)$(bindir)/$(INAME)"
-	$(INSTALL_DATA) -D minecraftd.conf           "$(DESTDIR)$(confdir)/$(GAME)"
-	$(INSTALL_DATA) -D minecraftd.service        "$(DESTDIR)$(libdir)/systemd/system/$(INAME).service"
-	$(INSTALL_DATA) -D minecraftd-backup.service "$(DESTDIR)$(libdir)/systemd/system/$(INAME)-backup.service"
-	$(INSTALL_DATA) -D minecraftd-backup.timer   "$(DESTDIR)$(libdir)/systemd/system/$(INAME)-backup.timer"
-	$(INSTALL_DATA) -D minecraftd.sysusers       "$(DESTDIR)$(libdir)/sysusers.d/$(INAME).conf"
-	$(INSTALL_DATA) -D minecraftd.tmpfiles       "$(DESTDIR)$(libdir)/tmpfiles.d/$(INAME).conf"
+	$(INSTALL_PROGRAM) -D velocityd.sh "$(DESTDIR)$(bindir)/$(INAME)"
+	$(INSTALL_DATA) -D velocityd.conf           "$(DESTDIR)$(confdir)/$(GAME)"
+	$(INSTALL_DATA) -D velocityd.service        "$(DESTDIR)$(libdir)/systemd/system/$(INAME).service"
+	$(INSTALL_DATA) -D velocityd.sysusers       "$(DESTDIR)$(libdir)/sysusers.d/$(INAME).conf"
+	$(INSTALL_DATA) -D velocityd.tmpfiles       "$(DESTDIR)$(libdir)/tmpfiles.d/$(INAME).conf"
 
 uninstall:
 	rm -f "$(bindir)/$(INAME)"
 	rm -f "$(confdir)/$(GAME)"
 	rm -f "$(libdir)/systemd/system/$(INAME).service"
-	rm -f "$(libdir)/systemd/system/$(INAME)-backup.service"
-	rm -f "$(libdir)/systemd/system/$(INAME)-backup.timer"
 	rm -f "$(libdir)/sysusers.d/$(INAME).conf"
 	rm -f "$(libdir)/tmpfiles.d/$(INAME).conf"

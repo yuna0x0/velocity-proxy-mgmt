@@ -1,13 +1,13 @@
-# Management Script for Minecraft Servers
+# Management Script for PaperMC Velocity Proxy
 
 ## Content
 
-The main purpose of this repository is to develop a minecraft server management script.
-Its driving goals are minimalism, versatility (spigot/papermc/cuberite/...) and feature completeness.
+The main purpose of this repository is to develop a PaperMC Velocity proxy management script.
+Its driving goals are minimalism and feature completeness.
 
 The script depends on `tmux` to fork the server into the background and communicate with it.
 All the communication namely querying for online users and issuing commands in the console of the server is done using `tmux`.
-While the server is offline, the script can listen on the minecraft port for incoming connections and start up the server as soon as a user connects.
+While the server is offline, the script can listen on the Velocity port for incoming connections and start up the server as soon as a user connects.
 
 ## Installation
 
@@ -19,8 +19,7 @@ While the server is offline, the script can listen on the minecraft port for inc
 * sudo -- privilege separation
 * tmux -- communication with server
 
-* netcat -- listen on the minecraft port for incoming connections while the server is down (optional)
-* tar -- take world backups (optional)
+* netcat -- listen on the Velocity port for incoming connections while the server is down (optional)
 
 ### Build
 
@@ -34,40 +33,49 @@ make
 make install
 ```
 
-### Build and Install for a different Flavor of Minecraft
+### Build and Install with different arguments
 
 ```
-make GAME=spigot \
-  INAME=spigot \
-  SERVER_ROOT=/srv/craftbukkit \
-  BACKUP_PATHS="world world_nether world_the_end" \
-  GAME_USER=craftbukkit \
-  MAIN_EXECUTABLE=spigot.jar \
-  SERVER_START_CMD="java -Xms512M -Xmx1024M -jar ./spigot.jar nogui"
+make GAME=velocity \
+  INAME=velocity \
+  SERVER_ROOT=/srv/velocity \
+  GAME_USER=velocity \
+  MAIN_EXECUTABLE=velocity.jar \
+  SERVER_START_CMD="java -Xms1G -Xmx1G -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:MaxInlineLevel=15 -jar ./velocity.jar"
 ```
 
 ```
 make install \
-  GAME=spigot \
-  INAME=spigot
+  GAME=velocity \
+  INAME=velocity
 ```
 
 ## FAQ
 
 ### Where are the Server Files Located
 
-The world data is stored under /srv/minecraft and the server runs as minecraft user to increase security.
-Use the minecraft script under /usr/bin/minecraftd to start, stop or backup the server.
+The server data is stored under /srv/velocity and the server runs as velocity user to increase security.
+Use the velocity script under /usr/bin/velocityd to start or stop the server.
 
 ### How to configure the Server
 
-Adjust the configuration file under /etc/conf.d/minecraft to your liking.
-
-### Server does not start
-
-For the server to start you have to accept the EULA in /srv/minecraft/eula.txt !
-The EULA file is generated after the first server start.
+Adjust the configuration file under /etc/conf.d/velocity to your liking.
 
 ## License
 
-Unless otherwise stated, the files in this project may be distributed under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or any later version. This work is distributed in the hope that it will be useful, but without any warranty; without even the implied warranty of merchantability or fitness for a particular purpose. See [version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) and [version 3](https://www.gnu.org/copyleft/gpl-3.0.html) of the GNU General Public License for more details.
+Copyright (c) [Gordian Edenhofer](https://github.com/Edenhofer)
+
+Copyright (c) [yuna0x0](https://github.com/yuna0x0)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
